@@ -1,0 +1,186 @@
+---
+title: "Econ 483"
+subtitle: "Final Paper"
+author: Christina Chi
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output: html_notebook  
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(tidyr)
+library(ivreg)
+library(dplyr)
+library(fixest)
+library(doBy)
+library(MASS)
+library(readr)
+library(vtable)
+library(sandwich)
+library(lmtest)
+library(gam)
+library(robustbase)
+library(corrplot)
+library(car)
+library(descr)
+```
+
+## Import Data
+
+```{r cars}
+data <- read.csv("college.csv")
+```
+
+```{r} 
+#No college names
+dfra <- data
+dfra <- dfra[, -1]
+dfra$Private <- as.numeric(dfra$Private == "Yes")
+dfra$Private <- as.factor((dfra$Private))
+
+#Only data we care about 
+df <- subset(dfra, select = c(Private, P.Undergrad, Room.Board, S.F.Ratio, Grad.Rate, Outstate))
+```
+
+
+## VIF
+```{r}
+fit <- lm(Grad.Rate ~ ., data = df)
+vif_values <- vif(fit)
+names(vif_values)[vif_values < 5]
+vif_values[vif_values < 5]
+```
+
+
+## Histogram
+```{r}
+par(mfrow = c(2, 2))
+
+hist(df$P.Undergrad, breaks = 25, freq = FALSE, 
+     xlab = "Number of Part-time Students", ylab = "Density", 
+     xlim = c(0,max(df$P.Undergrad)), col = 'skyblue',
+     main = "Histogram of Part-time Students")
+curve(dnorm(x, mean = mean(df$P.Undergrad), sd = sd(df$P.Undergrad)), add = TRUE, col = "blue", lwd = 2, lty = 2)
+
+hist(df$Room.Board, breaks = 25, freq = FALSE, 
+     xlab = "Estimated Room and Board Costs", ylab = "Density", 
+     xlim = c(0,max(df$Room.Board)), col = 'skyblue',
+     main = "Histogram of Room and Board Costs")
+curve(dnorm(x, mean = mean(df$Room.Board), sd = sd(df$Room.Board)), add = TRUE, col = "blue", lty = 2, lwd = 2)
+
+hist(df$S.F.Ratio, breaks = 25, freq = FALSE, 
+     xlab = "Student-to-faculty Ratio", ylab = "Density", 
+     xlim = c(0,max(df$S.F.Ratio)), col = 'skyblue',
+     main = "Histogram of Student-to-faculty Ratio")
+curve(dnorm(x, mean = mean(df$S.F.Ratio), sd = sd(df$S.F.Ratio)), 
+      add = TRUE, col = "blue", lty = 2, lwd = 2)
+
+hist(df$Outstate, breaks = 25, freq = FALSE, 
+     xlab = "Out-of-State Tuition", 
+     ylab = "Density", col = 'skyblue',
+     main = "Histogram of Out-of-State Tuition")
+curve(dnorm(x, mean = mean(df$Outstate), sd = sd(df$Outstate)), 
+      add = TRUE, col = "blue", lty = 2, lwd = 2)
+```
+
+## Boxplot of Private
+```{r}
+boxplot(df$Grad.Rate ~ df$Private, data = df,
+        main = "Boxplot of Private and Public College",
+        xlab = "Private or Public",
+        ylab = "College Graduation Rate",
+        names = c("Public", "Private"))
+```
+
+## Outliers 
+```{r}
+length(boxplot.stats(df$Grad.Rate[df$Private == 1])$out)
+length(boxplot.stats(df$Grad.Rate[df$Private == 0])$out)
+```
+
+
+## Scatterplot
+```{r}
+par(mfrow = c(2, 2))
+plot(log(df$P.Undergrad), df$Grad.Rate)
+plot(df$Room.Board, df$Grad.Rate)
+plot(df$S.F.Ratio, df$Grad.Rate)
+plot(log(df$Outstate), df$Grad.Rate)
+```
+
+## Summary Stat
+```{r}
+con_data <- df[, -1]
+summary_stats <- data.frame(
+  Minimum = apply(con_data, 2, function(x) round(min(x, na.rm = TRUE), 5)),
+  Maximum = format(apply(con_data, 2, function(x) round(max(x, na.rm = TRUE), 2)),  scientific = FALSE),
+  Median = apply(con_data, 2, function(x) round(median(x, na.rm = TRUE), 5)),
+  Mean = apply(con_data, 2, function(x) round(mean(x, na.rm = TRUE), 5)))
+summary_stats
+```
+
+
+
+## 2 Correlation graph
+```{r}
+df$Private <- as.numeric(df$Private)
+corM <- cor(df)
+
+corrplot(corM, method = 'square', diag = FALSE, order = 'hclust', addrect = 3, rect.col = 'blue', rect.lwd = 3, tl.col = "black", tl.srt = 45)
+```
+
+## All correlation
+```{r}
+corAll <- cor(dfra)
+corrplot(corAll,type = 'upper', tl.col = 'black', 
+         tl.srt = 45, method = 'circle')
+```
+
+
+## OLS Model Comparsion
+```{r}
+fit1 <- lm(Grad.Rate ~ log(Outstate), data = df)
+summary(fit1)
+```
+
+
+
+```{r}
+fit2 <- lm(Grad.Rate ~ log(Outstate) + Room.Board, data = df)
+summary(fit2)
+
+anova(fit1, fit2)
+```
+
+```{r}
+fit3 <- lm(Grad.Rate ~  Room.Board + log(Outstate) + Private, data = df)
+summary(fit3)
+
+anova(fit2, fit3)
+```
+
+
+```{r}
+fit4 <- lm(Grad.Rate ~ Room.Board + log(Outstate) +  S.F.Ratio, data = df)
+summary(fit4)
+
+anova(fit2, fit4)
+```
+
+```{r}
+fit5 <- lm(Grad.Rate ~ Room.Board + log(Outstate) + log(P.Undergrad), data = df)
+summary(fit5)
+
+anova(fit2, fit5)
+```
+
+```{r}
+#All 5 variable
+fitA <- lm(Grad.Rate ~ log(Outstate) + Private + Room.Board + 
+             log(P.Undergrad) + S.F.Ratio, data = df)
+summary(fitA)
+
+anova(fit5, fitA)
+```
+
+##Fit 6 Best 
